@@ -1,80 +1,162 @@
-# Saayam Chatbot – **LangChain** Edition
+# Saayam‑bot Repository Docs Bundle
 
-A modular Retrieval-Augmented Generation chatbot that uses  
-**LangChain 0.2**, Pinecone v3, and Google Gemini 2.5 Flash.
-
----
-
-## 🗂 Project layout
-
-saayam-bot/
-│
-├─ ingest/
-│ └─ ingest_pdf.py # one-shot loader: PDF / code → Pinecone
-│
-├─ saayam_rag/
-│ ├─ config.py # env + shared clients
-│ ├─ vector_store.py # PineconeVectorStore wrapper
-│ ├─ website_fallback.py # scrape & cache https://saayamforall.org
-│ ├─ llm.py # ChatGoogleGenerativeAI wrapper
-│ └─ chain.py # ConversationalRetrievalChain (+history)
-│
-└─ api/
-├─ server.py # FastAPI – /chat
-└─ cli.py # terminal REPL
-
-yaml
-Copy
-Edit
+Below are the five text resources you asked for — ready to copy or split into separate files as you commit.
 
 ---
 
-## ⚙️ Setup
+## 1. `.gitignore`
+
+```
+# ── Python artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ── Virtual‑envs
+.venv/
+venv/
+env/
+
+# ── IDE / OS noise
+.vscode/
+.idea/
+.DS_Store
+
+# ── Secrets
+.env
+.env.*
+
+# but keep the public template
+!.env.template
+```
+
+---
+
+## 2. `.env.template`
+
+```
+# Copy to .env and paste real keys
+PINECONE_API_KEY=
+PINECONE_ENV=us-east-1
+PINECONE_INDEX=sayaam
+GOOGLE_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+---
+
+## 3. `README.md`  *(root ‑ present on **both** branches)*
+
+````markdown
+# Saayam-for-All Chatbot
+
+This repository hosts two flavours of a Retrieval‑Augmented Generation (RAG)
+chatbot that answers questions about Saayam‑for‑All.
+
+| Branch | Tech stack | Highlights | Entry‑point |
+|--------|-----------|------------|-------------|
+| **main** | Classic Python | Single‑file FastAPI, direct Pinecone, Gemini 2.5 | `chat_api.py` |
+| **langchain** | LangChain 0.2 | Modular folders, ConversationalRetrievalChain, live‑site fallback | `api/` |
 
 ```bash
-# 1 – create & activate virtual-env
-python -m venv .venv
-source .venv/bin/activate           # Windows: .\.venv\Scripts\activate
+# clone & choose
+git clone https://github.com/<you>/saayam-bot.git
+cd saayam-bot
+git switch langchain   # or: git switch main
+````
 
-# 2 – install deps
+Each branch carries its own README with detailed setup.
+
+````
+
+---
+
+## 4. `README-classic.md`  *(commit on **main** branch)*
+```markdown
+# Saayam Chatbot – Classic Version
+
+A minimal Retrieval‑Augmented chatbot without LangChain.
+
+## Features
+* FastAPI endpoint `/chat`
+* Sentence‑Transformers embeddings (`all-MiniLM-L6-v2`)
+* Pinecone v3 vector DB
+* Google Gemini 2.5 Flash completion
+* Optional live‑site fallback (scrapes https://saayamforall.org)
+
+## Quick‑start
+```bash
+python -m venv .venv && source .venv/bin/activate          # Win: .\.venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.template .env    # add keys
 
-# 3 – add secrets
-cp .env.template .env               # then edit with real API keys
-📥 Ingest documents
-bash
-Copy
-Edit
+# embed the PDF
+python index_code.py --root SaayamForAll.pdf
+
+# run API
+python -m uvicorn chat_api:app --reload --env-file .env
+
+# terminal chat
+python chat_cli.py
+````
+
+````
+
+---
+
+## 5. `README-langchain.md`  *(commit on **langchain** branch)*
+```markdown
+# Saayam Chatbot – **LangChain** Edition
+
+Modular ConversationalRetrievalChain powered by Gemini 2.5 Flash & Pinecone.
+
+## Project layout
+```text
+saayam-bot/
+├─ ingest/ingest_pdf.py
+├─ saayam_rag/
+│   ├─ config.py
+│   ├─ vector_store.py
+│   ├─ website_fallback.py
+│   ├─ llm.py
+│   └─ chain.py
+└─ api/
+    ├─ server.py
+    └─ cli.py
+````
+
+## Setup
+
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.template .env    # add API keys
+```
+
+### Ingest docs
+
+```bash
 python ingest/ingest_pdf.py --root SaayamForAll.pdf
-Embeds the PDF (or entire folder) into your Pinecone index.
+```
 
-🚀 Run the API
-bash
-Copy
-Edit
+### Run API
+
+```bash
 python -m uvicorn api.server:app --reload --env-file .env
-Visit http://127.0.0.1:8000/docs for the interactive swagger UI.
+```
 
-💬 Chat from terminal
-bash
-Copy
-Edit
+### Chat
+
+```bash
 python api/cli.py
-vbnet
-Copy
-Edit
-You: hi
-Bot: Hi! How can we help you with Saayam-for-All today?
-🔍 Key features
-ConversationalRetrievalChain supplies chat history & retrieved docs to
-Gemini.
+```
 
-Custom system prompt – friendly, first-person-plural tone (“we”).
+## Key features
 
-Website fallback – if Pinecone lacks the answer, scrape
-https://saayamforall.org and re-ask.
+* ConversationalRetrievalChain with history
+* Friendly "we" tone via custom system prompt
+* Website fallback when Pinecone lacks answer
+* Secrets kept out of Git via `.env.template`
 
-.env workflow – secrets stay out of Git; shareable .env.template.
-
-Branch isolation – this branch is independent of the classic single-file
-implementation found on main.
+```
+```
