@@ -16,3 +16,15 @@ venv/
 # ── Secrets
 .env
 .env.*
+
+# ── node / vite ───────────────────────────
+saayam-web/node_modules/
+saayam-web/.env
+saayam-web/dist/
+saayam-web/.next/
+saayam-web/.cache/
+saayam-web/.DS_Store
+
+# vscode / idea
+.vscode/
+.idea/
