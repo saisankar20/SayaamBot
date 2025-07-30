@@ -1,11 +1,13 @@
 #!/usr/bin/env python
-# api/server.py – FastAPI endpoint that wraps the LangChain RAG chain
-# Adds CORS so the Vite front-end (http://localhost:5173) can call /chat.
+
+import sys
+import os
+import re
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from typing import List
-
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware            # ← NEW
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from saayam_rag.chain import rag_chain, memory
@@ -17,8 +19,14 @@ GREETINGS = {
     "good afternoon", "good evening",
 }
 
-# change this if your front-end runs elsewhere
 FRONTEND_ORIGIN = "http://localhost:5173"
+
+# Store temporary state in memory (per session basis)
+follow_up_state = {
+    "asked_clarification": False,
+    "asked_for_contact": False,
+    "volunteer_requested": False,
+}
 
 # ─────────────────────────── data models ─────────────────────────────
 class Req(BaseModel):
@@ -31,7 +39,6 @@ class Resp(BaseModel):
 # ───────────────────────────── FastAPI ───────────────────────────────
 app = FastAPI(title="Saayam RAG API")
 
-# ---- enable CORS so the browser can reach the API -------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_ORIGIN],
@@ -44,45 +51,89 @@ def greet(q: str) -> bool:
     t = q.lower().strip()
     return any(t == g or t.startswith(g + " ") for g in GREETINGS)
 
+def is_affirmative(text: str) -> bool:
+    return text.lower().strip() in {"yes", "yeah", "yep", "sure", "please", "ok"}
+
+def is_phone_number(text: str) -> bool:
+    return bool(re.match(r"^[\d\s()+-]{7,}$", text.strip()))
+
 # ─────────────────────────── routes ──────────────────────────────────
 @app.post("/chat", response_model=Resp)
 def chat(req: Req):
-    # reset convo on greeting
-    if greet(req.question):
+    q = req.question.strip()
+
+    # Handle greetings
+    if greet(q):
         memory.clear()
-        return Resp(
-            answer="Hi! How can we help you with Saayam-for-All today?",
-            sources=[],
-        )
+        follow_up_state.update({
+            "asked_clarification": False,
+            "asked_for_contact": False,
+            "volunteer_requested": False,
+        })
+        return Resp(answer="Hey there! 👋 How can we help you with Saayam-for-All today?", sources=[])
 
-    # 1) run LangChain RAG
-    result = rag_chain.invoke({"question": req.question})
+    # Handle empty input
+    if not q:
+        return Resp(answer="Oops, looks like your message is empty. Could you try asking your question again?", sources=[])
+
+    # Follow-up: got phone number after volunteer connect
+    if follow_up_state["asked_for_contact"] and is_phone_number(q):
+        follow_up_state["asked_for_contact"] = False
+        follow_up_state["volunteer_requested"] = False
+        return Resp(answer="Thanks! We’re connecting you with a volunteer now. You’ll hear from us soon. 📞", sources=[])
+
+    # Follow-up: user said yes to volunteer help
+    if follow_up_state["asked_clarification"] and is_affirmative(q):
+        follow_up_state["asked_clarification"] = False
+        follow_up_state["asked_for_contact"] = True
+        return Resp(answer="Sure! Could you please share your phone number so we can reach out?", sources=[])
+
+    # 1. Try to answer using RAG
+    result = rag_chain.invoke({"question": q})
     answer: str = result["answer"]
-    srcs = [d.metadata.get("path", "") for d in result["source_documents"]]
+    srcs = ["a trusted source" for _ in result["source_documents"] if _]
 
-    # 2) website fallback
+    # 2. If answer is unknown, try fallback website context
     if answer.lower().startswith(("i don’t know", "i don't know")):
-        ctx = maybe_context(req.question)
+        ctx = maybe_context(q)
         if ctx:
             answer = rag_chain.combine_docs_chain.llm_chain.predict(
-                question=req.question,
+                question=q,
                 context=ctx,
             )
             if not answer.lower().startswith(("i don’t know", "i don't know")):
                 srcs.append("https://saayamforall.org/")
 
-    # 3) style tweaks
-    answer = answer.replace("* ", "• ")
-    if answer.lower().startswith("saayam-for-all can help"):
-        answer = answer.replace(
-            "Saayam-for-All can help you", "Sure — we can help you"
-        )
+    # 3. Still doesn't know — enter clarification flow
+    if answer.lower().startswith(("i don’t know", "i don't know")):
+        if not follow_up_state["asked_clarification"]:
+            follow_up_state["asked_clarification"] = True
+            return Resp(
+                answer="Hmm, I’m not quite sure I understood that. Could you explain it another way?",
+                sources=[],
+            )
+        else:
+            follow_up_state["asked_clarification"] = False
+            follow_up_state["asked_for_contact"] = True
+            return Resp(
+                answer="Would you like me to connect you with a volunteer?",
+                sources=[],
+            )
 
-    # 4) dedupe sources
+    # 4. Friendly answer formatting
+    answer = answer.replace("* ", "👉 ")
+    answer = re.sub(
+        r"\b(Saayam-for-All|this system|this application) can help you\b",
+        "Sure — we can help you",
+        answer,
+        flags=re.IGNORECASE
+    )
+
+    # 5. Deduplicate sources
     seen, uniq = set(), []
     for s in srcs:
         if s and s not in seen:
             uniq.append(s)
             seen.add(s)
 
-    return Resp(answer=answer, sources=uniq)
+    return Resp(answer=answer.strip(), sources=uniq)
